@@ -1,0 +1,48 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Environment / secrets
+.env
+.env.*
+!.env.example
+
+# Testing & coverage
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+
+# Type/lint caches
+.mypy_cache/
+.ruff_cache/
+
+# Logs
+*.log
+# Leading slash anchors this to the repo root's own runtime log directory
+# (settings.log_dir) - a bare "logs/" also matched app/modules/logs/, a real
+# wired-in module (see app/api/v1/router.py), which meant its entire source
+# was silently untracked and had zero git history.
+/logs/
+
+# setup.sh runtime state
+*.pid
+
+# Uploads (local dev storage)
+uploads/
+
+# Editors / OS
+.DS_Store
+.vscode/
+.idea/

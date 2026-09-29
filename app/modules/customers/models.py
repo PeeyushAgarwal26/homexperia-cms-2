@@ -1,0 +1,115 @@
+import uuid
+from datetime import date, datetime
+
+from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Index, SmallInteger, String, UniqueConstraint
+from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.sql import func
+
+from app.db.base import Base, BaseModel, SoftDeleteMixin
+from app.modules.geo.models import State
+
+
+class Customer(BaseModel, SoftDeleteMixin):
+    """User Management -> Customer. See docs/02-database-schema.md."""
+
+    __tablename__ = "customers"
+    __table_args__ = (
+        Index(
+            "ix_customers_customer_code", "customer_code", unique=True, postgresql_where="deleted_at IS NULL"
+        ),
+        Index(
+            "ix_customers_phone_number", "phone_number", unique=True, postgresql_where="deleted_at IS NULL"
+        ),
+        Index("ix_customers_email", "email", unique=True, postgresql_where="deleted_at IS NULL"),
+        Index("ix_customers_is_active", "is_active"),
+        Index("ix_customers_state_code", "state_code"),
+        Index(
+            "ix_customers_linked_supplier_id",
+            "linked_supplier_id",
+            unique=True,
+            postgresql_where="deleted_at IS NULL",
+        ),
+    )
+
+    name: Mapped[str] = mapped_column(String(250), nullable=False)
+    date_of_start: Mapped[date | None] = mapped_column(Date, nullable=True)
+    email: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    phone_number: Mapped[str] = mapped_column(String(20), nullable=False)
+    gst_number: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    address: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    pin_code: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    state_code: Mapped[str | None] = mapped_column(String(10), ForeignKey("states.code"), nullable=True)
+    state: Mapped[State | None] = relationship(State, lazy="joined")
+    city: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    profile_image_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    # This customer's own business logo — distinct from profile_image_url
+    # (a personal avatar). Mirrors Supplier.logo_url; lets the client-facing
+    # app show a real logo for whoever's logged in, not just for suppliers.
+    logo_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    # This customer's OWN theme, set directly by admin/sub-admin — independent
+    # of any supplier. Distinct from SupplierCustomerTheme (per supplier↔customer
+    # pair, supplier- or admin-on-a-supplier's-behalf-set); this is the theme
+    # that applies to this customer's account itself, with no supplier involved.
+    primary_color: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    secondary_color: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    device_limit: Mapped[int] = mapped_column(SmallInteger, nullable=False, default=1)
+    active_device_count: Mapped[int] = mapped_column(SmallInteger, nullable=False, default=0)
+    last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    customer_code: Mapped[str] = mapped_column(String(100), nullable=False)
+    password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    created_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("admin_users.id"), nullable=True
+    )
+    # This customer's OWN supplier identity, if they've been promoted (opt-in
+    # — see CustomerService.promote_to_supplier). AiCreditService resolves
+    # billing through this column: whoever is actually logged in and using
+    # the visualizer pays, not whichever supplier owns the product they're
+    # looking at. NULL for a plain customer who has never supplied anything.
+    linked_supplier_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("suppliers.id"), nullable=True
+    )
+
+
+class CustomerSupplier(Base):
+    """Junction table — the literal contents of one customer's Map Suppliers selection."""
+
+    __tablename__ = "customer_suppliers"
+
+    customer_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("customers.id", ondelete="CASCADE"), primary_key=True
+    )
+    supplier_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("suppliers.id", ondelete="CASCADE"), primary_key=True
+    )
+    mapped_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("admin_users.id"), nullable=True
+    )
+    mapped_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class SupplierCustomerTheme(BaseModel):
+    """Supplier -> My Customers -> Theme. Branding a supplier has configured for one
+    specific customer's future storefront — scoped per (supplier, customer) pair,
+    since the same customer may see different branding from each supplier they work
+    with. primary_color/secondary_color are placeholder fields; the real field set is
+    still pending discussion with the client — this table is built to grow more
+    columns later."""
+
+    __tablename__ = "supplier_customer_themes"
+    __table_args__ = (
+        UniqueConstraint("supplier_id", "customer_id", name="uq_supplier_customer_themes_pair"),
+        Index("ix_supplier_customer_themes_customer_id", "customer_id"),
+    )
+
+    supplier_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("suppliers.id", ondelete="CASCADE"), nullable=False
+    )
+    customer_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("customers.id", ondelete="CASCADE"), nullable=False
+    )
+    primary_color: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    secondary_color: Mapped[str | None] = mapped_column(String(20), nullable=True)
